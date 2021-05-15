@@ -13,7 +13,6 @@ use tokio::net::{ToSocketAddrs, UdpSocket};
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 
-use util::ifaces;
 use util::Error;
 
 mod conn_test;
@@ -67,24 +66,19 @@ impl DnsConn {
         socket.bind(&SockAddr::from(addr))?;
         {
             let mut join_error_count = 0;
-            let interfaces = match ifaces::ifaces() {
-                Ok(e) => e,
-                Err(e) => {
-                    log::error!("Error getting interfaces: {:?}", e);
-                    return Err(Error::new(e.to_string()));
-                }
-            };
-
+            let interfaces = pnet::datalink::interfaces();
             for interface in &interfaces {
-                if let Some(SocketAddr::V4(e)) = interface.addr {
-                    if let Err(e) = socket.join_multicast_v4(&Ipv4Addr::new(224, 0, 0, 251), e.ip())
-                    {
-                        log::trace!("Error connecting multicast, error: {:?}", e);
-                        join_error_count += 1;
-                        continue;
-                    }
+                for ip in &interface.ips {
+                    if let std::net::IpAddr::V4(e) = &ip.ip() {
+                        if let Err(e) = socket.join_multicast_v4(&Ipv4Addr::new(224, 0, 0, 251), e)
+                        {
+                            log::trace!("Error connecting multicast, error: {:?}", e);
+                            join_error_count += 1;
+                            continue;
+                        }
 
-                    log::trace!("Connected to interface address {:?}", e);
+                        log::trace!("Connected to interface address {:?}", e);
+                    }
                 }
             }
 
